@@ -1,4 +1,4 @@
-from model import *
+from Neuron import *
 import torch
 import pickle
 import jieba
