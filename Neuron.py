@@ -6,8 +6,11 @@ from torch.nn.utils.rnn import pad_sequence
 from collections import Counter
 import random
 import jieba
+import logging
 
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+# 关闭jieba所有控制台输出
+jieba.setLogLevel(logging.INFO)  # 比DEBUG更高级别，屏蔽调试信息
+jieba.initialize()
 # 中文分词函数
 def tokenize(text):
     return list(jieba.cut(text))
@@ -32,6 +35,7 @@ class Vocabulary:
 
     def __len__(self):
         return len(self.word2idx)
+
 
 # 数据集类
 class ChatbotDataset(Dataset):
@@ -169,38 +173,6 @@ class ChatDataset(Dataset):
         return torch.tensor(question_indices, dtype=torch.long), \
                torch.tensor(answer_indices, dtype=torch.long)
 
-def collate_fn(batch):
-    questions, answers = zip(*batch)
-    question_tensors = [torch.tensor(q, dtype=torch.long) for q in questions]
-    answer_tensors = [torch.tensor(a, dtype=torch.long) for a in answers]
-    question_tensors = pad_sequence(question_tensors, batch_first=True, padding_value=0)
-    answer_tensors = pad_sequence(answer_tensors, batch_first=True, padding_value=0)
-    return question_tensors, answer_tensors
-
-def read_data(file_path):
-    questions = []
-    answers = []
-    current_question = []
-    current_answer = []
-    
-    with open(file_path, 'r', encoding='utf-8') as file:
-        for line in file:
-            line = line.strip()
-            if line.startswith('？'):
-                if current_question:
-                    questions.append('\n'.join(current_question))
-                    answers.append('\n'.join(current_answer))
-                    current_question = []
-                    current_answer = []
-                current_question.append(line[1:].strip())
-            elif line.startswith('！'):
-                current_answer.append(line[1:].strip())
-        if current_question:
-            questions.append('\n'.join(current_question))
-            answers.append('\n'.join(current_answer))
-    
-    return questions, answers
-
 class Seq2SeqWithAttention(nn.Module):
     def __init__(self, encoder, decoder, max_length = 2000):
         super(Seq2SeqWithAttention, self).__init__()
@@ -228,37 +200,35 @@ class Seq2SeqWithAttention(nn.Module):
 
         return outputs
 
-def generate_response(self, input_text):
-    # 分词和转换为索引
-    tokens = [self.vocab.word2idx.get(word, self.vocab.word2idx["<UNK>"]) for word in tokenize(input_text)]
+def generate_response(self, input_text, max_length=50, temperature=1.0):
+    if input_text == "":
+        return "问题不能为空哦~"
     
-    # 转换为张量
-    input_tensor = torch.tensor([tokens], dtype=torch.long).to(self.device)
+    # 分词 + 词表转换
+    tokens = []
+    for word in jieba.cut(input_text):
+        token = self.vocab.word2idx.get(word, self.vocab.word2idx["<UNK>"])
+        tokens.append(token)
     
-    # 创建虚拟目标张量，只包含 <SOS> 标记
-    sos_token = torch.tensor([[self.vocab.word2idx["<SOS>"]]], dtype=torch.long).to(self.device)
-    
-    # 初始化响应列表
-    response = []
-    
-    # 获取编码器的输出和隐藏状态
-    encoder_out, hidden = self.model.encoder(input_tensor)
-    
-    # 使用 <SOS> 标记作为初始输入
-    input = sos_token
-    
-    # 生成响应
+    # 生成逻辑（带温度参数）
     with torch.no_grad():
-        for _ in range(self.model.max_length):
+        input_tensor = torch.tensor([tokens]).to(self.device)
+        encoder_out, hidden = self.model.encoder(input_tensor)
+        output_ids = [self.vocab.word2idx["<SOS>"]]
+        
+        for _ in range(max_length):
+            input = torch.tensor([[output_ids[-1]]]).to(self.device)
             output, hidden, _ = self.model.decoder(input, hidden, encoder_out)
-            top1 = output.argmax(2).item()
             
-            if top1 == self.vocab.word2idx["<EOS>"]:
+            # 应用温度采样
+            logits = output.squeeze() / temperature
+            prob = torch.softmax(logits, dim=-1)
+            next_token = torch.multinomial(prob, 1).item()
+            
+            if next_token == self.vocab.word2idx["<EOS>"]:
                 break
-            
-            response.append(top1)
-            input = torch.tensor([[top1]], dtype=torch.long).to(self.device)
+            output_ids.append(next_token)
     
     # 转换为文本
-    response_text = ''.join([self.vocab.idx2word[idx] for idx in response])
-    return response_text
+    response = "".join([self.vocab.idx2word[idx] for idx in output_ids[1:]])  # 去掉 <SOS>
+    return response
