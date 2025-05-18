@@ -11,4 +11,5 @@ AI训练，数据很简单，训练出来的模型效果不是很好
     pip install torch
     pip install jieba
 
+我会在之后有可能会尝试Transformer，当然最后的结局有可能是我压根儿做不出来
 xinhaitianze  保留所有权利
