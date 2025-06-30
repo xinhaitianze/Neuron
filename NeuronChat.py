@@ -53,7 +53,7 @@ class SimpleChatbot:
                 progress.update(task, advance=1)
             
             # 初始化模型
-            num_layers = 4
+            num_layers = 2
             self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
             self.model = Seq2SeqWithAttention(
                 Encoder(len(self.vocab), 256, num_layers, 128),
