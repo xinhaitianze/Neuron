@@ -1,7 +1,10 @@
 from Neuron import *
 import pickle
-import re
+import os
+from tqdm import tqdm
 
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+print(f"GPU是否可用：{torch.cuda.is_available()}")
 def validate(model, dataloader, criterion):
     model.eval()
     total_loss = 0
@@ -20,38 +23,40 @@ def validate(model, dataloader, criterion):
             total_loss += loss.item()
     return total_loss / len(dataloader)
 
-def read_data(file_path):
+def read_data(data_dir='data'):
+    """加载data目录下所有.AiTrainData文件"""
     questions = []
     answers = []
-    current_question = []
-    current_answer = []
+    data_files = [f for f in os.listdir(data_dir) if f.endswith('.AiTrainData')]
     
-    with open(file_path, 'r', encoding='utf-8') as file:
-        for line in file:
-            if line.startswith('？'):
-                if current_question:
-                    questions.append('\n'.join(current_question))
-                    answers.append('\n'.join(current_answer))
-                    current_question = []
-                    current_answer = []
-                current_question.append(line[1:].strip())
-            elif line.startswith('！'):
-                current_answer.append(line[1:].strip())
-        if current_question:
-            questions.append('\n'.join(current_question))
-            answers.append('\n'.join(current_answer))
+    if not data_files:
+        raise FileNotFoundError(f"在 {data_dir} 目录下未找到任何.AiTrainData文件")
     
+    print(f"找到 {len(data_files)} 个训练文件:")
+    for filename in tqdm(data_files, desc='加载文件中'):
+        with open(os.path.join(data_dir, filename), 'r', encoding='utf-8') as f:
+            current_q, current_a = [], []
+            for line in f:
+                line = line.strip()
+                if line.startswith('？'):
+                    if current_q:
+                        questions.append('\n'.join(current_q))
+                        answers.append('\n'.join(current_a))
+                        current_q, current_a = [], []
+                    current_q.append(line[1:])
+                elif line.startswith('！'):
+                    current_a.append(line[1:])
+            
+            if current_q:
+                questions.append('\n'.join(current_q))
+                answers.append('\n'.join(current_a))
+    
+    print(f"合并后总数据量: {len(questions)} 组问答对")
     return questions, answers
 
-def preprocess_question(question):
-    # 将所有字母转换为小写
-    question = question.lower()
-    # 使用正则表达式去除标点符号和其他非字母字符
-    question = re.sub(r'[^a-zA-Z0-9\u4e00-\u9fff\s]', '', question)
-    return question
 if __name__ == "__main__":
     # 读取训练文件
-    questions, answers = read_data('data/Q&A.AiTrainData')
+    questions, answers = read_data()
     print(f"成功加载 {len(questions)} 组问答对")
     
     # 创建词汇表
@@ -122,7 +127,7 @@ if __name__ == "__main__":
                 print("Early stopping triggered")
                 break
 
-    # 保存模型
-    torch.save(model.state_dict(), 'best_model.pth')
+        # 保存模型
+        torch.save(model.state_dict(), 'best_model.pth')
 
 
