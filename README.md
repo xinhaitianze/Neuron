@@ -10,5 +10,3 @@ AI训练，数据很简单，训练出来的模型效果不是很好
 
     pip install torch
     pip install jieba
-
-xinhaitianze  保留所有权利
